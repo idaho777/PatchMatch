@@ -131,10 +131,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Main.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="solver.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="example.jpg" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="solver.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
