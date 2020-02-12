@@ -23,12 +23,15 @@ Solver::Solver(Mat3b i, Mat3b e) {
 void Solver::Edit() {
     InitializeNNF();
     A = image;
+    DisplayImage(-1);
+    InitializeA();
 
     for (int i = 0; i < ITERATIONS; ++i) {
+        DisplayImage(i);
         cout << "Iteration: " << i << endl;
         Interleave(i % 2 == 0);
-        DisplayImage(i);
     }
+    DisplayImage(ITERATIONS);
 }
 
 
@@ -94,9 +97,10 @@ void Solver::Interleave(bool top) {
             if (!IsHole(row, col)) continue;
             Propagation(row, col, next_row, next_col);
             RandomSearch(row, col);
-            UpdateA(row, col);
         }
     }
+
+    UpdateA();
 }
 
 
@@ -142,7 +146,7 @@ void Solver::RandomSearch(int row, int col) {
     int i = 0;
     while (i < RANDOM_ITERATIONS) {
         Vec2i b = Vec2i(Random(0, ROWS), Random(0, COLS));
-        if (IsHole(b[0], b[1])) continue;
+        if (IsHole(b[0], b[1]) || !IsValidCell(b[0], b[1])) continue;
 
         double cand_d = PatchDistance(row, col, b[0], b[1]);
         if (cand_d < min_d) {
@@ -154,15 +158,58 @@ void Solver::RandomSearch(int row, int col) {
     }
 
     nnf(row, col) = min_offset;
-    SquashNNF(row, col);
 }
 
 
 // ====================================================================================================================
-void Solver::UpdateA(int row, int col) {
-    SquashNNF(row, col);
-    Vec2i d = nnf(row, col);
-    A(row, col) = A(row + d[0], col + d[1]);
+void Solver::UpdateA() {
+    //SquashNNF(row, col);
+    //Vec2i d = nnf(row, col);
+    //A(row, col) = A(row + d[0], col + d[1]);
+
+    Mat3i numers = Mat3i(ROWS, COLS);
+    Mat3b new_A = Mat3b(ROWS, COLS);
+
+    for (int row = 0; row < ROWS; ++row) {
+        for (int col = 0; col < COLS; ++col) {
+            if (!IsHole(row, col)) continue;
+
+            int l = 0;
+            int a = 0;
+            int b = 0;
+            int num = 0;
+
+            int half = PATCH_SIZE / 2;
+            for (int ro = -half; ro <= half; ++ro) {
+                for (int co = -half; co <= half; ++co) {
+                    int temp_r = row + ro;
+                    int temp_c = col + co;
+                    if (!IsValidCell(temp_r, temp_c)) continue;
+
+                    Vec2i temp_offset = nnf(temp_r, temp_c);
+                    int b_temp_r = temp_r + temp_offset[0] - ro;
+                    int b_temp_c = temp_c + temp_offset[1] - co;
+                    if (!IsValidCell(b_temp_r, b_temp_c) || IsHole(b_temp_r, b_temp_c)) continue;
+
+                    l += A(b_temp_r, b_temp_c)[0];
+                    a += A(b_temp_r, b_temp_c)[1];
+                    b += A(b_temp_r, b_temp_c)[2];
+                    ++num;
+                }
+            }
+            if (num != 0) {
+                new_A(row, col) = Vec3b(l / num, a / num, b / num);
+            }
+        }
+    }
+
+    for (int row = 0; row < ROWS; ++row) {
+        for (int col = 0; col < COLS; ++col) {
+            if (!IsHole(row, col)) continue;
+
+            A(row, col) = new_A(row, col);
+        }
+    }
 }
 
 
@@ -202,6 +249,17 @@ void Solver::InitializeNNF() {
 }
 
 
+void Solver::InitializeA() {
+    for (int row = 0; row < ROWS; ++row) {
+        for (int col = 0; col < COLS; ++col) {
+            if (!IsHole(row, col)) continue;
+            auto offset = nnf(row, col);
+            A(row, col) = A(row + offset[0], col + offset[1]);
+        }
+    }
+}
+
+
 // ====================================================================================================================
 double Solver::PatchDistance(int a_row, int a_col, Vec2i offset) {
     int b_row = a_row + offset[0];
@@ -236,11 +294,21 @@ double Solver::PatchDistance(int a_row, int a_col, int b_row, int b_col) {
 void Solver::SquashNNF(int row, int col) {
     Vec2i offset = nnf(row, col);
     if (!IsValidCell(row + offset[0], col + offset[1])) {
-        if (row + offset[0] >= ROWS) --offset[0];
-        if (row + offset[0] < 0)     ++offset[0];
-        if (col + offset[1] >= COLS) --offset[1];
-        if (col + offset[1] < 0)     ++offset[1];
+        if (row + offset[0] >= ROWS) {
+            offset[0] = ROWS - row - 1;
+        }
+        if (row + offset[0] < 0) {
+            offset[0] = 0 - row;
+        }
+        if (col + offset[1] >= COLS) {
+            offset[1] = COLS - col - 1;
+        }
+        if (col + offset[1] < 0) {
+            offset[1] = 0 - col;
+        }
     }
+
+    nnf(row, col) = offset;
 }
 
 

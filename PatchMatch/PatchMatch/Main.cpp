@@ -21,6 +21,8 @@ int main(int argc, char** argv) {
     cvtColor(image_bgr, image_lab, COLOR_BGR2Lab);
     edit_layer = imread(argv[2], IMREAD_COLOR);
 
+
+
     if (!image_bgr.data || !image_lab.data || !edit_layer.data) { // Check for invalid input
         cout << "Could not open or find the image or edit" << std::endl;
         return -1;
@@ -31,9 +33,9 @@ int main(int argc, char** argv) {
     solver.Edit();
 
     // Output
-    Mat3b edited_image_lab = solver.A;
-    Mat3b edited_image_bgr;
-    cvtColor(edited_image_lab, edited_image_bgr, COLOR_Lab2BGR);
+    //Mat3b edited_image_lab = solver.A;
+    //Mat3b edited_image_bgr;
+    //cvtColor(edited_image_lab, edited_image_bgr, COLOR_Lab2BGR);
 
     waitKey(0); // Wait for a keystroke in the window
     return 0;
