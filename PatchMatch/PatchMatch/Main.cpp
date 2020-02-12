@@ -25,22 +25,15 @@ int main(int argc, char** argv) {
         cout << "Could not open or find the image or edit" << std::endl;
         return -1;
     }
-    
-    solver::Solver solver(image_bgr, edit_layer);
+
+    // Solver
+    solver::Solver solver(image_lab, edit_layer);
     solver.Edit();
 
-    /*for (auto it = image_lab.begin(); it != image_lab.end(); ++it) {
-        cout << *it << endl;
-    }*/
-
-    Mat3b edited_image_lab = image_lab;
+    // Output
+    Mat3b edited_image_lab = solver.A;
     Mat3b edited_image_bgr;
     cvtColor(edited_image_lab, edited_image_bgr, COLOR_Lab2BGR);
-
-    namedWindow("Display window", WINDOW_AUTOSIZE); // Create a window for display.
-    imshow("Display window", edited_image_bgr); // Show our image inside it.
-//    namedWindow("Display window", WINDOW_AUTOSIZE); // Create a window for display.
-//    imshow("Edit window", edit_layer); // Show our image inside it.
 
     waitKey(0); // Wait for a keystroke in the window
     return 0;

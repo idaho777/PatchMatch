@@ -4,12 +4,17 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#include <random>
+#include <exception>
 #include <iostream>
+#include <string>
+#include <sstream>
+#include <random>
 
 namespace solver {
 
-void Solver::Initialize() {
+Solver::Solver(Mat3b i, Mat3b e) {
+    image = i;
+    edit_layer = e;
     ROWS = image.rows;
     COLS = image.cols;
 }
@@ -19,86 +24,55 @@ void Solver::Edit() {
     InitializeNNF();
     A = image;
 
-
     for (int i = 0; i < ITERATIONS; ++i) {
-        DisplayNNF(i);
         cout << "Iteration: " << i << endl;
-        curr_d = -1 * Mat1d::ones(ROWS, COLS);
-        Propagation(i % 2 == 0);
-        RandomSearch();
-
-        /*
-            Update A from B
-            Display A
-            Replace B with A
-        */
+        Interleave(i % 2 == 0);
+        DisplayImage(i);
     }
-
-    DisplayNNF(ITERATIONS);
-    /*
-    Section 3:
-        - Nearest Neighbor Field (NNF) f: A -> R2 defined over all patch coordinates(patch centers) in image A.
-            In this case, f(a) = b - a, or a vector indicating the coordinate offset.
-            We need to create an offset array and then use this offset array to color our image.
-
-        - Initialization:
-            Initialize all offsets as zero except for those colored: be random vector
-
-        -Iterations:
-            Improving the mapping.  Alternate between propogation and random search.
-            - Propogation:
-                for (x,y) colored, check left and top.  argmin(Distance of {left, center, top})
-                Examine iterations in reverse for even iteration numbers.
-            - Random Search:
-                Find a random vector ui = v0 + w a^i R, where v0 is f(x,y), w = maximum image dimension, a is ratio of window sizes, R is unit window.
-            Do this iteraition 5 times.
-
-    */
-
-
-
-    // Create NNF
 }
 
 
 void Solver::DisplayNNF(int iteration) {
-    /*
     Mat3b image_nnf = Mat3b(ROWS, COLS);
     
     MatIterator_<Vec3b> it = image_nnf.begin();
-    MatIterator_<Vec3b> image_it = image.begin();
     MatIterator_<Vec2i> nnf_it = nnf.begin();
-
-
     while (nnf_it != nnf.end()) {
-        int l = 100;
-        int a = (*nnf_it)[1] / ROWS;
-        int b = (*nnf_it)[0] / COLS;
+        *it = Vec3b(0, 0, 0);
+        if (*nnf_it != Vec2i(0, 0)) {
+            int r = ((*nnf_it)[1] + ROWS) / (2.0 * ROWS) * 255;
+            int g = ((*nnf_it)[0] + COLS) / (2.0 * COLS) * 255;
+            int b = 0;
 
-        //*it = Vec3b(l, a, b);
-        *it = *image_it;
+            *it = Vec3b(b, g, r);
+            //cout << nnf_it.pos() << " " << *nnf_it << " " << *it << endl;
+        }
 
-        it++;
-        image_it++;
-        nnf_it++;
+        ++it;
+        ++nnf_it;
     }
-    */
 
-    //Mat3b image_nnf_bgr = Mat3b(ROWS, COLS);
-    //cvtColor(image, image_nnf_bgr, COLOR_Lab2BGR);
-
-    namedWindow("NNF: " + iteration, WINDOW_AUTOSIZE);
-    imshow("Display window", image); // Show our image inside it.
+    stringstream ss;
+    ss << "NNF: " << iteration;
+    string name = ss.str();
+    namedWindow(name, WINDOW_AUTOSIZE);
+    imshow(name, image_nnf); // Show our image inside it.
 }
 
 
-void Solver::DisplayImage() {
+void Solver::DisplayImage(int iteration) {
+    stringstream ss;
+    ss << "Image: " << iteration;
+    string name = ss.str();
+    namedWindow(name, WINDOW_AUTOSIZE);
 
+    Mat3b A_bgr;
+    cvtColor(A, A_bgr, COLOR_Lab2BGR);
+    imshow(name, A_bgr); // Show our image inside it.
 }
 
 
-// ====================================================================================================================
-void Solver::Propagation(bool top) {
+void Solver::Interleave(bool top) {
     int start_row = 1;
     int start_col = 1;
     int end_row = ROWS;
@@ -117,30 +91,41 @@ void Solver::Propagation(bool top) {
 
     for (int row = start_row; row != end_row; row += next_row) {
         for (int col = start_col; col != end_col; col += next_col) {
-            Vec2i hori_nnf = nnf(row, col - next_col);
-            Vec2i curr_nnf = nnf(row, col);
-            Vec2i vert_nnf = nnf(row - next_row, col);
-
-            double hori_d = PatchDistance(row, col, hori_nnf[1], hori_nnf[0]);
-            double curr_d = PatchDistance(row, col, curr_nnf[1], curr_nnf[0]);
-            double vert_d = PatchDistance(row, col, vert_nnf[1], vert_nnf[0]);
-
-            Vec2i arg_min = nnf(row, col);
-            double min_d = curr_d;
-
-            if (hori_d < min_d) {
-                arg_min = hori_nnf;
-                min_d = hori_d;
-            }
-
-            if (vert_d < min_d) {
-                arg_min = vert_nnf;
-                min_d = vert_d;
-            }
-            
-            nnf(row, col) = arg_min;   
+            if (!IsHole(row, col)) continue;
+            Propagation(row, col, next_row, next_col);
+            RandomSearch(row, col);
+            UpdateA(row, col);
         }
     }
+}
+
+
+// ====================================================================================================================
+void Solver::Propagation(int row, int col, int next_row, int next_col) {
+    Vec2i hori_offset = nnf(row, col - next_col);
+    Vec2i curr_offset = nnf(row, col);
+    Vec2i vert_offset = nnf(row - next_row, col);
+
+    double hori_d = PatchDistance(row, col, hori_offset);
+    double curr_d = PatchDistance(row, col, curr_offset);
+    double vert_d = PatchDistance(row, col, vert_offset);
+
+    Vec2i arg_min = curr_offset;
+    double min_d = curr_d;
+
+    // Only consider solved holes.  Non-holes are perfect 0,0
+    if (IsHole(row, col - next_col) && hori_d < min_d) {
+        arg_min = hori_offset;
+        min_d = hori_d;
+    }
+
+    if (IsHole(row - next_row, col) && vert_d < min_d) {
+        arg_min = vert_offset;
+        min_d = vert_d;
+    }
+
+    nnf(row, col) = arg_min;
+    SquashNNF(row, col);
 }
 
 
@@ -150,8 +135,34 @@ bool Solver::IsValidCell(int r, int c) {
 
 
 // ====================================================================================================================
-void Solver::RandomSearch() {
+void Solver::RandomSearch(int row, int col) {
+    Vec2i min_offset = nnf(row, col);
+    double min_d = PatchDistance(row, col, min_offset);
 
+    int i = 0;
+    while (i < RANDOM_ITERATIONS) {
+        Vec2i b = Vec2i(Random(0, ROWS), Random(0, COLS));
+        if (IsHole(b[0], b[1])) continue;
+
+        double cand_d = PatchDistance(row, col, b[0], b[1]);
+        if (cand_d < min_d) {
+            min_offset = Vec2i(b[0] - row, b[1] - col);
+            min_d = cand_d;
+        }
+
+        ++i;
+    }
+
+    nnf(row, col) = min_offset;
+    SquashNNF(row, col);
+}
+
+
+// ====================================================================================================================
+void Solver::UpdateA(int row, int col) {
+    SquashNNF(row, col);
+    Vec2i d = nnf(row, col);
+    A(row, col) = A(row + d[0], col + d[1]);
 }
 
 
@@ -168,17 +179,17 @@ void Solver::InitializeNNF() {
         Vec3b curr_edit = *it;
         Vec2i curr_d_vec = Vec2b(0, 0);
         *ret_hole_it = 0;
-        Vec2i pos = Vec2i(it.pos().x, it.pos().y);
+        Vec2i pos = Vec2i(it.pos().y, it.pos().x);
 
         if (IsForEdit(curr_edit)) {
-            curr_d_vec[0] = Random(0, COLS) - pos[0];
-            curr_d_vec[1] = Random(0, ROWS) - pos[1];
+            curr_d_vec[0] = Random(0, ROWS) - pos[0];
+            curr_d_vec[1] = Random(0, COLS) - pos[1];
             *ret_hole_it = 1;
         }
 
-        int xp = pos[0] + curr_d_vec[0];
-        int yp = pos[1] + curr_d_vec[1];
-        if (IsForEdit(edit_layer(yp, xp))) continue;
+        int rp = pos[0] + curr_d_vec[0];
+        int cp = pos[1] + curr_d_vec[1];
+        if (IsForEdit(edit_layer(rp, cp))) continue;
 
         *ret_it = curr_d_vec;
         it++;
@@ -192,10 +203,15 @@ void Solver::InitializeNNF() {
 
 
 // ====================================================================================================================
-double Solver::PatchDistance(int a_row, int a_col, int d_row, int d_col) {
-    int b_row = a_row + d_row;
-    int b_col = a_col + d_col;
+double Solver::PatchDistance(int a_row, int a_col, Vec2i offset) {
+    int b_row = a_row + offset[0];
+    int b_col = a_col + offset[1];
 
+    return PatchDistance(a_row, a_col, b_row, b_col);
+}
+
+
+double Solver::PatchDistance(int a_row, int a_col, int b_row, int b_col) {
     double ret = 0;
     int half = PATCH_SIZE / 2;
 
@@ -204,9 +220,9 @@ double Solver::PatchDistance(int a_row, int a_col, int d_row, int d_col) {
             if (IsValidCell(a_row + ro, a_col + co) && IsValidCell(b_row + ro, b_col + co)) {
                 Vec3d A_cell = A(a_row + ro, a_col + co);
                 Vec3d B_cell = A(b_row + ro, b_col + co);
-                double rd = sqrt(A_cell[0] - B_cell[0]);
-                double gd = sqrt(A_cell[1] - B_cell[1]);
-                double bd = sqrt(A_cell[2] - B_cell[2]);
+                double rd = pow(A_cell[0] - B_cell[0], 2);
+                double gd = pow(A_cell[1] - B_cell[1], 2);
+                double bd = pow(A_cell[2] - B_cell[2], 2);
 
                 ret += rd + gd + bd;
             }
@@ -217,11 +233,25 @@ double Solver::PatchDistance(int a_row, int a_col, int d_row, int d_col) {
 }
 
 
+void Solver::SquashNNF(int row, int col) {
+    Vec2i offset = nnf(row, col);
+    if (!IsValidCell(row + offset[0], col + offset[1])) {
+        if (row + offset[0] >= ROWS) --offset[0];
+        if (row + offset[0] < 0)     ++offset[0];
+        if (col + offset[1] >= COLS) --offset[1];
+        if (col + offset[1] < 0)     ++offset[1];
+    }
+}
+
 
 bool Solver::IsForEdit(Vec3b v) {
     return v == EDIT_COLOR;
 }
 
+
+bool Solver::IsHole(int r, int c) {
+    return hole(r, c) == 1;
+}
 
 int Solver::Random(int a, int b) {
     std::random_device rd;
