@@ -27,7 +27,9 @@ void Solver::Edit() {
     InitializeA();
 
     for (int i = 0; i < ITERATIONS; ++i) {
-        DisplayImage(i);
+        if (i % 2 == 0) {
+            DisplayImage(i);
+        }
         cout << "Iteration: " << i << endl;
         Interleave(i % 2 == 0);
     }
